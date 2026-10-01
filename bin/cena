@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Sugerencia diaria de cena: Claude elige desde la base y el mensaje sale directo por la API de Telegram.
 # Lo dispara asistente-cena.timer. Corre separado de la sesión con Channels, así no depende de ella.
+# Sin el plugin de Telegram ni otros MCP: si lo cargara, su poller reemplaza al de la sesión principal
+# (Telegram admite uno solo por bot) y el bot queda mudo cuando este claude -p termina.
 set -euo pipefail
 BASE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 STATE="${TELEGRAM_STATE_DIR:-$HOME/.claude/channels/telegram}"
@@ -11,7 +13,7 @@ CHAT_ID="$(jq -r '.allowFrom[0]' "$STATE/access.json")"
 cd "$BASE"
 MSG="$(claude -p "Tarea programada: sugerí la cena de hoy siguiendo la sección 'Sugerencia de cena' de CLAUDE.md. Registrá la sugerencia en la tabla sugerencias. Tu respuesta final es exactamente el mensaje que le llega al usuario por Telegram, sin nada más." \
   --allowedTools "Bash($BASE/bin/db *)" "Bash(bin/db *)" \
-  --max-turns 8 2>&1)" || MSG="No pude armar la sugerencia de cena hoy: ${MSG:0:300}"
+  --strict-mcp-config --settings '{"enabledPlugins":{"telegram@claude-plugins-official":false}}' \n  --max-turns 8 2>&1)" || MSG="No pude armar la sugerencia de cena hoy: ${MSG:0:300}"
 
 curl -fsS "https://api.telegram.org/bot${TOKEN}/sendMessage" \
   --data-urlencode "chat_id=${CHAT_ID}" \
