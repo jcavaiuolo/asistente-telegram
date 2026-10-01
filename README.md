@@ -21,7 +21,8 @@ timer 04:00 ──► backup de la base + reinicio de la sesión
 | `bin/guardar-comprobante` | Copia fotos del inbox de Telegram a `comprobantes/AAAA/MM/`. |
 | `bin/cena` | Sugerencia diaria, la manda directo por la API de Telegram. |
 | `bin/backup` | Backup en caliente de la base, retiene 60 días. |
-| `systemd/` | Servicio principal y timers (reinicio 04:00, cena 18:00). |
+| `systemd/` | Servicio principal, tablero web y timers (reinicio 04:00, cena 18:00). |
+| `web/` | Tablero web: gastos por día y edición de menú y comidas. |
 | `setup.sh` | Instalación automática en Debian. |
 
 ## Paso 1: la VM
@@ -129,6 +130,15 @@ Y después usalo normal:
 - `almorcé una ensalada césar`
 - `sacá el guiso del menú`
 - `¿qué ceno hoy?`
+
+## Tablero web
+
+`http://ip-vm:8080`. Lo instala y arranca `setup.sh` (servicio `asistente-web`, código en `web/`). Es un solo archivo de Bun usando `bun:sqlite`, sin dependencias.
+
+- **Gastos** (solo lectura): elegís el período (hoy, ayer, 7 días, este mes, mes anterior, este año o fechas a mano) y ves los movimientos agrupados por día, con el total del día y el acumulado del período. Arriba, totales y egresos por categoría (clic en una para filtrar). Clic en un movimiento muestra el mensaje original y si fue editado o anulado; el 📎 abre el comprobante. Pesos y dólares nunca se suman entre sí. Las correcciones se siguen haciendo por Telegram, así quedan en la auditoría.
+- **Comidas**: el menú se edita en la tabla (Enter o "Guardar"); el switch "En menú" saca o vuelve a poner un plato sin borrarlo. Abajo, lo que comiste, también editable, con alta y baja.
+
+**No tiene login.** Cualquiera en tu red puede verlo y editar comidas: no lo expongas a internet (ni port forwarding ni túnel). Para cambiar el puerto: `PORT` en `/etc/systemd/system/asistente-web.service`, después `daemon-reload` y `restart asistente-web`.
 
 ## Operación
 

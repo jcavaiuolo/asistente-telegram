@@ -17,7 +17,7 @@ id "$U" &>/dev/null || useradd -m -s /bin/bash "$U"
 
 echo "==> Archivos del proyecto en $DIR"
 mkdir -p "$DIR"/{data,comprobantes,backups}
-cp -r "$SRC"/bin "$SRC"/.claude "$SRC"/CLAUDE.md "$SRC"/schema.sql "$DIR"/
+cp -r "$SRC"/bin "$SRC"/web "$SRC"/.claude "$SRC"/CLAUDE.md "$SRC"/schema.sql "$DIR"/
 chmod +x "$DIR"/bin/*
 chown -R "$U:$U" /home/$U
 chmod 700 "$DIR"/data "$DIR"/comprobantes "$DIR"/backups
@@ -36,8 +36,13 @@ echo "==> Servicios systemd (se habilitan, no se arrancan todavía)"
 cp "$SRC"/systemd/* /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable asistente.service asistente-reinicio.timer asistente-cena.timer
+# El tablero web no depende del login de Claude: se arranca ya.
+systemctl enable --now asistente-web.service
 
+IP="$(hostname -I | awk '{print $1}')"
 cat <<MSG
+
+Tablero web: http://$IP:8080
 
 Listo la parte automática. Ahora los pasos manuales (ver README.md, "Paso 3"):
   sudo -iu $U

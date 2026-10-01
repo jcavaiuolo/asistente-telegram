@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asistente</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<style>
+  :root { --pico-font-size: 93%; }
+  header.container nav { padding: .25rem 0; }
+  nav a[aria-current="page"] { font-weight: 700; text-decoration: underline; text-underline-offset: .35em; }
+  .fila-controles { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: end; margin-bottom: .75rem; }
+  .fila-controles label { margin: 0; }
+  .fila-controles input, .fila-controles select { margin: 0; }
+  .fila-controles fieldset { margin: 0; display: flex; flex-wrap: wrap; gap: .25rem 1rem; }
+  .fila-controles fieldset label { white-space: nowrap; }
+  .presets { display: flex; flex-wrap: wrap; gap: .35rem; }
+  .presets button { margin: 0; padding: .3rem .75rem; }
+  .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .muted { color: var(--pico-muted-color); }
+  .tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+  .tarjetas article { margin: 0; padding: .75rem 1rem; }
+  .tarjetas .valor { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tarjetas small { display: block; }
+  .cats { margin-bottom: 1.25rem; }
+  .cat { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr auto; gap: .6rem; align-items: center;
+         padding: .2rem .4rem; border-radius: 4px; cursor: pointer; }
+  .cat:hover { background: var(--pico-muted-border-color); }
+  .cat.activa { outline: 2px solid var(--pico-primary); }
+  .barra { height: .6rem; border-radius: 3px; background: var(--pico-primary); min-width: 2px; }
+  article.dia { padding: .5rem 1rem; margin: 0 0 1rem; }
+  article.dia > header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .25rem 1rem;
+                         margin: -.5rem -1rem .5rem; padding: .6rem 1rem; }
+  article.dia table { margin: 0; }
+  .tabla-scroll { overflow-x: auto; }
+  tr.fila { cursor: pointer; }
+  tr.anulado td { text-decoration: line-through; opacity: .55; }
+  tr.ingreso td.num { color: #2e7d32; }
+  tr.detalle td { font-size: .85em; color: var(--pico-muted-color); }
+  table.editable td { vertical-align: middle; }
+  table.editable input:not([type=checkbox]), table.editable select { margin: 0; padding: .3rem .45rem; height: auto; font-size: .92em; min-width: 6rem; }
+  table.editable button { margin: 0; padding: .3rem .7rem; font-size: .9em; }
+  tr.inactivo td { opacity: .5; }
+  tr.sucio td { background: color-mix(in srgb, var(--pico-primary) 10%, transparent); }
+  form.alta { border: 1px dashed var(--pico-muted-border-color); border-radius: 6px; padding: .75rem; }
+  form.alta button { width: auto; margin: 0; }
+  table.editable input[data-k="nombre"], table.editable input[data-k="descripcion"] { min-width: 15rem; }
+  #toast { position: fixed; right: 1rem; bottom: 1rem; padding: .6rem 1rem; border-radius: 6px; background: #2e7d32;
+           color: #fff; display: none; z-index: 10; max-width: 90vw; }
+  #toast.error { background: #b00020; }
+  h3 { margin-top: 1.5rem; }
+</style>
+</head>
+<body>
+<header class="container">
+  <nav>
+    <ul><li><strong>Asistente</strong></li></ul>
+    <ul>
+      <li><a href="#gastos" data-tab="gastos">Gastos</a></li>
+      <li><a href="#comidas" data-tab="comidas">Comidas</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main class="container">
+
+<!-- ==================== GASTOS ==================== -->
+<section id="tab-gastos" hidden>
+  <div class="fila-controles">
+    <div class="presets">
+      <button class="outline secondary" data-preset="hoy">Hoy</button>
+      <button class="outline secondary" data-preset="ayer">Ayer</button>
+      <button class="outline secondary" data-preset="7d">Últimos 7 días</button>
+      <button class="outline secondary" data-preset="mes">Este mes</button>
+      <button class="outline secondary" data-preset="mes-ant">Mes anterior</button>
+      <button class="outline secondary" data-preset="anio">Este año</button>
+    </div>
+  </div>
+  <div class="fila-controles">
+    <label>Desde <input type="date" id="desde"></label>
+    <label>Hasta <input type="date" id="hasta"></label>
+    <label>Categoría <select id="f-cat"><option value="">Todas</option></select></label>
+    <fieldset>
+      <label><input type="checkbox" name="tipo" value="gasto" checked> Gastos</label>
+      <label><input type="checkbox" name="tipo" value="transferencia_enviada" checked> Transf. enviadas</label>
+      <label><input type="checkbox" name="tipo" value="ingreso"> Ingresos</label>
+      <label><input type="checkbox" name="tipo" value="transferencia_recibida"> Transf. recibidas</label>
+      <label><input type="checkbox" id="f-anulados"> Ver anulados</label>
+    </fieldset>
+  </div>
+
+  <div id="tarjetas" class="tarjetas"></div>
+  <div id="cats" class="cats"></div>
+  <div id="dias"></div>
+</section>
+
+<!-- ==================== COMIDAS ==================== -->
+<section id="tab-comidas" hidden>
+  <h3>Menú</h3>
+  <form id="alta-plato" class="alta fila-controles">
+    <label>Plato <input name="nombre" required placeholder="Ej: tarta de verdura"></label>
+    <label>Tipo <select name="tipo"></select></label>
+    <label>Etiquetas <input name="etiquetas" placeholder="rapido, horno"></label>
+    <label>Notas <input name="notas"></label>
+    <button type="submit">Agregar al menú</button>
+  </form>
+  <label><input type="checkbox" role="switch" id="f-inactivos"> Mostrar platos sacados del menú</label>
+  <div class="tabla-scroll">
+    <table class="editable striped">
+      <thead><tr><th>Plato</th><th>Tipo</th><th>Etiquetas</th><th>Notas</th><th>Última vez</th><th class="num">Veces 30 d</th><th>En menú</th><th></th></tr></thead>
+      <tbody id="platos"></tbody>
+    </table>
+  </div>
+
+  <h3>Lo que comí</h3>
+  <form id="alta-comida" class="alta fila-controles">
+    <label>Fecha <input type="date" name="fecha" required></label>
+    <label>Momento <select name="momento"></select></label>
+    <label>Plato del menú <select name="plato_id" class="sel-plato"></select></label>
+    <label>Descripción <input name="descripcion" placeholder="Si no está en el menú"></label>
+    <button type="submit">Anotar</button>
+  </form>
+  <div class="fila-controles">
+    <label>Desde <input type="date" id="c-desde"></label>
+    <label>Hasta <input type="date" id="c-hasta"></label>
+  </div>
+  <div class="tabla-scroll">
+    <table class="editable striped">
+      <thead><tr><th>Fecha</th><th>Momento</th><th>Plato del menú</th><th>Descripción</th><th></th></tr></thead>
+      <tbody id="comidas"></tbody>
+    </table>
+  </div>
+</section>
+</main>
+
+<div id="toast" role="status"></div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const money = (n, mon = 'ARS') => (mon === 'USD' ? 'US$ ' : '$ ') + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const nombreDia = (f) => capital(new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' }));
+const fechaCorta = (f) => new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+
+const EGRESOS = ['gasto', 'transferencia_enviada'];
+const TIPO = { gasto: 'Gasto', ingreso: 'Ingreso', transferencia_enviada: 'Transferencia enviada', transferencia_recibida: 'Transferencia recibida' };
+const MEDIO = { efectivo: 'Efectivo', debito: 'Débito', credito: 'Crédito', mercado_pago: 'Mercado Pago', transferencia: 'Transferencia', otro: 'Otro' };
+const TIPOS_PLATO = ['carne', 'pollo', 'pescado', 'pasta', 'vegetariano', 'sopa', 'otro'];
+const MOMENTOS = ['desayuno', 'almuerzo', 'merienda', 'cena', 'colacion'];
+
+let toastTimer;
+function toast(msg, error = false) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = error ? 'error' : '';
+  t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.style.display = 'none'), error ? 6000 : 2000);
+}
+
+async function api(path, opts = {}) {
+  const init = { method: opts.method || 'GET' };
+  if (opts.body !== undefined) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(opts.body);
+  }
+  const r = await fetch(path, init);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
+  return data;
+}
+
+function guardarPref(k, v) { try { localStorage.setItem(k, v); } catch {} }
+function leerPref(k) { try { return localStorage.getItem(k); } catch { return null; } }
+
+/* ==================== Pestañas ==================== */
+const cargadas = {};
+function mostrarTab() {
+  const tab = location.hash === '#comidas' ? 'comidas' : 'gastos';
+  for (const t of ['gastos', 'comidas']) $('#tab-' + t).hidden = t !== tab;
+  $$('nav a[data-tab]').forEach((a) => (a.dataset.tab === tab ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  if (tab === 'gastos') cargarGastos();
+  else cargarPlatos().then(cargarComidas);
+}
+window.addEventListener('hashchange', mostrarTab);
+
+/* ==================== Gastos ==================== */
+let movs = [];
+
+function preset(p, cargar = true) {
+  const hoy = new Date();
+  let d = new Date(hoy), h = new Date(hoy);
+  if (p === 'ayer') { d.setDate(hoy.getDate() - 1); h = new Date(d); }
+  if (p === '7d') d.setDate(hoy.getDate() - 6);
+  if (p === 'mes') d = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  if (p === 'mes-ant') { d = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1); h = new Date(hoy.getFullYear(), hoy.getMonth(), 0); }
+  if (p === 'anio') d = new Date(hoy.getFullYear(), 0, 1);
+  $('#desde').value = iso(d);
+  $('#hasta').value = iso(h);
+  marcarPreset(p);
+  guardarPref('preset', p);
+  if (cargar) cargarGastos();
+}
+function marcarPreset(p) {
+  $$('[data-preset]').forEach((b) => b.classList.toggle('secondary', b.dataset.preset !== p));
+}
+
+async function cargarGastos() {
+  const desde = $('#desde').value, hasta = $('#hasta').value;
+  if (!desde || !hasta) return;
+  if (desde > hasta) { toast('"Desde" es posterior a "Hasta"', true); return; }
+  const tipos = $$('[name=tipo]:checked').map((c) => c.value);
+  const q = new URLSearchParams({ desde, hasta, tipos: tipos.join(','), anulados: $('#f-anulados').checked ? '1' : '0' });
+  try { movs = await api('/api/movimientos?' + q); } catch (e) { toast(e.message, true); return; }
+  const cats = [...new Set(movs.map((m) => m.categoria || 'sin_categoria'))].sort();
+  const sel = $('#f-cat'), actual = sel.value;
+  sel.innerHTML = '<option value="">Todas</option>' + cats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.value = cats.includes(actual) ? actual : '';
+  renderGastos();
+}
+
+function sumar(obj, mon, v) { obj[mon] = (obj[mon] || 0) + v; }
+const montos = (obj) => Object.keys(obj).sort().map((mon) => money(obj[mon], mon)).join(' · ');
+
+function renderGastos() {
+  const cat = $('#f-cat').value;
+  const lista = movs.filter((m) => !cat || (m.categoria || 'sin_categoria') === cat);
+  const vigentes = lista.filter((m) => !m.anulado);
+  const dias = Math.round((new Date($('#hasta').value) - new Date($('#desde').value)) / 86400000) + 1;
+
+  // Tarjetas
+  const egr = {}, ing = {};
+  for (const m of vigentes) sumar(EGRESOS.includes(m.tipo) ? egr : ing, m.moneda, m.monto);
+  let tarjetas = '';
+  for (const mon of Object.keys(egr).sort())
+    tarjetas += `<article><small class="muted">Egresos ${mon}</small><div class="valor">${money(egr[mon], mon)}</div>
+      <small class="muted">${money(egr[mon] / dias, mon)} por día (${dias} d)</small></article>`;
+  for (const mon of Object.keys(ing).sort())
+    tarjetas += `<article><small class="muted">Ingresos ${mon}</small><div class="valor" style="color:#2e7d32">${money(ing[mon], mon)}</div></article>`;
+  tarjetas += `<article><small class="muted">Movimientos</small><div class="valor">${vigentes.length}</div>
+    <small class="muted">${lista.length - vigentes.length ? `+ ${lista.length - vigentes.length} anulados` : '&nbsp;'}</small></article>`;
+  $('#tarjetas').innerHTML = tarjetas;
+
+  // Por categoría (egresos, separado por moneda: nunca se suman ARS y USD)
+  const porCat = {};
+  for (const m of movs.filter((m) => !m.anulado && EGRESOS.includes(m.tipo))) {
+    const k = m.moneda + '|' + (m.categoria || 'sin_categoria');
+    porCat[k] = (porCat[k] || 0) + m.monto;
+  }
+  const filasCat = Object.entries(porCat).map(([k, v]) => ({ mon: k.split('|')[0], cat: k.split('|')[1], v }));
+  const max = {};
+  for (const f of filasCat) max[f.mon] = Math.max(max[f.mon] || 0, f.v);
+  $('#cats').innerHTML = filasCat.length
+    ? '<small class="muted">Egresos por categoría (clic para filtrar)</small>' +
+      filasCat.sort((a, b) => a.mon.localeCompare(b.mon) || b.v - a.v).map((f) => `
+        <div class="cat ${f.cat === cat ? 'activa' : ''}" data-cat="${esc(f.cat)}">
+          <span>${esc(f.cat)}${f.mon === 'USD' ? ' (USD)' : ''}</span>
+          <div><div class="barra" style="width:${(100 * f.v / max[f.mon]).toFixed(1)}%"></div></div>
+          <span class="num">${money(f.v, f.mon)}</span>
+        </div>`).join('')
+    : '';
+
+  // Días: el acumulado se calcula de la fecha más vieja a la más nueva, se muestra de la más nueva a la más vieja.
+  const porDia = new Map();
+  for (const m of lista) { if (!porDia.has(m.fecha)) porDia.set(m.fecha, []); porDia.get(m.fecha).push(m); }
+  const fechas = [...porDia.keys()].sort();
+  const acum = {}, info = {};
+  for (const f of fechas) {
+    const dia = {};
+    for (const m of porDia.get(f)) if (!m.anulado && EGRESOS.includes(m.tipo)) sumar(dia, m.moneda, m.monto);
+    for (const [mon, v] of Object.entries(dia)) sumar(acum, mon, v);
+    info[f] = { dia, acum: { ...acum } };
+  }
+
+  $('#dias').innerHTML = fechas.length ? fechas.reverse().map((f) => {
+    const { dia, acum } = info[f];
+    const filas = porDia.get(f).map((m) => {
+      const egreso = EGRESOS.includes(m.tipo);
+      return `
+      <tr class="fila ${m.anulado ? 'anulado' : ''} ${egreso ? '' : 'ingreso'}" data-id="${m.id}" title="Clic para ver el detalle">
+        <td class="muted">#${m.id}</td>
+        <td>${esc(m.categoria || 'sin categoría')}</td>
+        <td>${esc(m.contraparte || '')}</td>
+        <td>${esc(MEDIO[m.medio] || m.medio || '')}</td>
+        <td>${esc(m.descripcion || '')}${m.tiene_comprobante ? ` <a href="/api/comprobante/${m.id}" target="_blank" title="Ver comprobante">📎</a>` : ''}</td>
+        <td class="num">${egreso ? '' : '+ '}${money(m.monto, m.moneda)}</td>
+      </tr>
+      <tr class="detalle" data-det="${m.id}" hidden><td></td><td colspan="5">
+        <strong>${esc(TIPO[m.tipo] || m.tipo)}</strong> · registrado ${esc(m.creado)}${m.actualizado ? ` · editado ${esc(m.actualizado)}` : ''}
+        ${m.anulado ? `<br>Anulado: ${esc(m.anulado_motivo || 'sin motivo')}` : ''}
+        ${m.mensaje_original ? `<br>Mensaje original: "${esc(m.mensaje_original)}"` : ''}
+      </td></tr>`;
+    }).join('');
+    return `<article class="dia">
+      <header><strong>${nombreDia(f)}</strong>
+        <span>Día: <strong>${Object.keys(dia).length ? montos(dia) : '$ 0'}</strong> &nbsp;·&nbsp; Acumulado: <strong>${montos(acum) || '$ 0'}</strong></span></header>
+      <div class="tabla-scroll"><table class="striped">
+        <thead><tr><th>#</th><th>Categoría</th><th>Dónde / quién</th><th>Medio</th><th>Detalle</th><th class="num">Monto</th></tr></thead>
+        <tbody>${filas}</tbody></table></div></article>`;
+  }).join('') : '<p class="muted">No hay movimientos en este período.</p>';
+}
+
+$$('[data-preset]').forEach((b) => b.addEventListener('click', () => preset(b.dataset.preset)));
+['#desde', '#hasta'].forEach((s) => $(s).addEventListener('change', () => { marcarPreset(null); guardarPref('preset', ''); cargarGastos(); }));
+$$('[name=tipo]').forEach((c) => c.addEventListener('change', cargarGastos));
+$('#f-anulados').addEventListener('change', cargarGastos);
+$('#f-cat').addEventListener('change', renderGastos);
+$('#cats').addEventListener('click', (e) => {
+  const c = e.target.closest('.cat');
+  if (!c) return;
+  $('#f-cat').value = $('#f-cat').value === c.dataset.cat ? '' : c.dataset.cat;
+  renderGastos();
+});
+$('#dias').addEventListener('click', (e) => {
+  if (e.target.closest('a')) return;
+  const tr = e.target.closest('tr.fila');
+  if (tr) { const d = $(`tr[data-det="${tr.dataset.id}"]`); d.hidden = !d.hidden; }
+});
+
+/* ==================== Comidas ==================== */
+let platos = [];
+
+const opcionesTipo = (actual) =>
+  '<option value="">(sin tipo)</option>' +
+  [...TIPOS_PLATO, ...(actual && !TIPOS_PLATO.includes(actual) ? [actual] : [])]
+    .map((t) => `<option ${t === actual ? 'selected' : ''}>${esc(t)}</option>`).join('');
+const opcionesMomento = (actual) => MOMENTOS.map((m) => `<option ${m === actual ? 'selected' : ''}>${m}</option>`).join('');
+const opcionesPlato = (actual) =>
+  '<option value="">(fuera del menú)</option>' +
+  platos.filter((p) => p.activo || p.id === actual)
+    .map((p) => `<option value="${p.id}" ${p.id === actual ? 'selected' : ''}>${esc(p.nombre)}${p.activo ? '' : ' (fuera del menú)'}</option>`).join('');
+
+async function cargarPlatos() {
+  try { platos = await api('/api/platos'); } catch (e) { toast(e.message, true); return; }
+  renderPlatos();
+  $('#alta-comida [name=plato_id]').innerHTML = opcionesPlato(null);
+}
+
+function renderPlatos() {
+  const ver = $('#f-inactivos').checked;
+  const visibles = platos.filter((p) => ver || p.activo);
+  $('#platos').innerHTML = visibles.map((p) => `
+    <tr data-id="${p.id}" class="${p.activo ? '' : 'inactivo'}">
+      <td><input data-k="nombre" value="${esc(p.nombre)}"></td>
+      <td><select data-k="tipo">${opcionesTipo(p.tipo)}</select></td>
+      <td><input data-k="etiquetas" value="${esc(p.etiquetas || '')}"></td>
+      <td><input data-k="notas" value="${esc(p.notas || '')}"></td>
+      <td class="muted">${p.ultima_vez ? `${fechaCorta(p.ultima_vez)}, ${p.dias_desde === 0 ? 'hoy' : `hace ${p.dias_desde} d`}` : 'nunca'}</td>
+      <td class="num">${p.veces_30d}</td>
+      <td><input type="checkbox" role="switch" data-k="activo" ${p.activo ? 'checked' : ''} title="Sacar o volver a poner en el menú"></td>
+      <td><button class="guardar" disabled>Guardar</button></td>
+    </tr>`).join('') || `<tr><td colspan="8" class="muted">${platos.length ? 'No hay platos activos.' : 'El menú está vacío.'}</td></tr>`;
+}
+
+function valores(tr) {
+  const o = {};
+  for (const el of $$('[data-k]', tr)) o[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value;
+  return o;
+}
+
+async function guardarPlato(tr) {
+  try {
+    await api('/api/platos/' + tr.dataset.id, { method: 'PUT', body: valores(tr) });
+    toast('Plato guardado');
+    cargarPlatos();
+  } catch (e) { toast(e.message, true); }
+}
+
+// Edición en línea: al tocar un campo la fila queda marcada y se habilita "Guardar"; Enter también guarda.
+function edicionEnLinea(tbody, guardar, borrar) {
+  tbody.addEventListener('input', (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr || e.target.type === 'checkbox') return;
+    tr.classList.add('sucio');
+    $('.guardar', tr).disabled = false;
+  });
+  tbody.addEventListener('change', (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    if (tr && e.target.type === 'checkbox') guardar(tr);   // el switch "en menú" guarda al instante
+    else if (tr && e.target.tagName === 'SELECT') { tr.classList.add('sucio'); $('.guardar', tr).disabled = false; }
+  });
+  tbody.addEventListener('keydown', (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    if (tr && e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); guardar(tr); }
+  });
+  tbody.addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    if (e.target.closest('.guardar')) guardar(tr);
+    if (borrar && e.target.closest('.borrar')) borrar(tr);
+  });
+}
+edicionEnLinea($('#platos'), guardarPlato);
+$('#f-inactivos').addEventListener('change', renderPlatos);
+
+$('#alta-plato').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await api('/api/platos', { method: 'POST', body: Object.fromEntries(new FormData(f)) });
+    toast('Agregado al menú');
+    f.reset();
+    f.nombre.focus();
+    cargarPlatos();
+  } catch (err) { toast(err.message, true); }
+});
+
+async function cargarComidas() {
+  const desde = $('#c-desde').value, hasta = $('#c-hasta').value;
+  if (!desde || !hasta) return;
+  if (!platos.length) await cargarPlatos();
+  let comidas;
+  try { comidas = await api('/api/comidas?' + new URLSearchParams({ desde, hasta })); } catch (e) { toast(e.message, true); return; }
+  $('#comidas').innerHTML = comidas.map((c) => `
+    <tr data-id="${c.id}" title="${esc(c.mensaje_original ? 'Mensaje original: ' + c.mensaje_original : '')}">
+      <td><input type="date" data-k="fecha" value="${c.fecha}"></td>
+      <td><select data-k="momento">${opcionesMomento(c.momento)}</select></td>
+      <td><select data-k="plato_id">${opcionesPlato(c.plato_id)}</select></td>
+      <td><input data-k="descripcion" value="${esc(c.descripcion)}"></td>
+      <td style="white-space:nowrap"><button class="guardar" disabled>Guardar</button>
+          <button class="borrar outline secondary" title="Borrar">✕</button></td>
+    </tr>`).join('') || '<tr><td colspan="5" class="muted">No hay comidas anotadas en este período.</td></tr>';
+}
+
+async function guardarComida(tr) {
+  try {
+    await api('/api/comidas/' + tr.dataset.id, { method: 'PUT', body: valores(tr) });
+    toast('Comida guardada');
+    cargarComidas(); cargarPlatos();
+  } catch (e) { toast(e.message, true); }
+}
+async function borrarComida(tr) {
+  const v = valores(tr);
+  if (!confirm(`¿Borrar "${v.descripcion}" (${v.momento} del ${v.fecha})?`)) return;
+  try {
+    await api('/api/comidas/' + tr.dataset.id, { method: 'DELETE', body: {} });
+    toast('Comida borrada');
+    cargarComidas(); cargarPlatos();
+  } catch (e) { toast(e.message, true); }
+}
+edicionEnLinea($('#comidas'), guardarComida, borrarComida);
+['#c-desde', '#c-hasta'].forEach((s) => $(s).addEventListener('change', cargarComidas));
+
+$('#alta-comida').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await api('/api/comidas', { method: 'POST', body: Object.fromEntries(new FormData(f)) });
+    toast('Comida anotada');
+    f.descripcion.value = '';
+    f.plato_id.value = '';
+    cargarComidas(); cargarPlatos();
+  } catch (err) { toast(err.message, true); }
+});
+
+/* ==================== Inicio ==================== */
+(function iniciar() {
+  const hoy = new Date();
+  $('#alta-plato [name=tipo]').innerHTML = opcionesTipo('');
+  const hora = hoy.getHours();
+  $('#alta-comida [name=momento]').innerHTML = opcionesMomento(hora < 11 ? 'desayuno' : hora < 16 ? 'almuerzo' : hora < 19 ? 'merienda' : 'cena');
+  $('#alta-comida [name=fecha]').value = iso(hoy);
+  const hace14 = new Date(hoy); hace14.setDate(hoy.getDate() - 13);
+  $('#c-desde').value = iso(hace14);
+  $('#c-hasta').value = iso(hoy);
+
+  // Período inicial: el último botón usado (o "Este mes"). Sin cargar todavía: lo hace mostrarTab.
+  preset(leerPref('preset') || 'mes', false);
+  mostrarTab();
+})();
+</script>
+</body>
+</html>

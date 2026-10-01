@@ -1,0 +1,23 @@
+[Unit]
+Description=Tablero web del asistente (gastos y comidas, solo red interna)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=asistente
+WorkingDirectory=/home/asistente/asistente
+Environment=HOME=/home/asistente
+Environment=TZ=America/Argentina/Buenos_Aires
+Environment=PORT=8080
+Environment=BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
+ExecStart=/home/asistente/.bun/bin/bun /home/asistente/asistente/web/server.ts
+Restart=on-failure
+RestartSec=5
+# Solo puede escribir en la base; el resto del sistema queda de solo lectura.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/asistente/asistente/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
