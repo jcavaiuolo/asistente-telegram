@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Acceso a la base del asistente. Único camino que Claude tiene permitido para tocar datos.
+# -safe desactiva .shell/.system, ATTACH, load_extension y escritura de archivos desde SQL.
+# Uso: bin/db "SELECT ..."     o     bin/db < archivo.sql
+set -euo pipefail
+BASE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+exec sqlite3 -safe -bail -box -cmd "PRAGMA foreign_keys=ON;" -cmd ".timeout 5000" "$BASE/data/asistente.db" "$@"

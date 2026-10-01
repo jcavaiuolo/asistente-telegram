@@ -1,0 +1,7 @@
+data/
+comprobantes/
+backups/
+.env
+*.db
+*.db-wal
+*.db-shm

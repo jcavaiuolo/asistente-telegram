@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/home/asistente/asistente/bin/db *)",
+      "Bash(bin/db *)",
+      "Bash(/home/asistente/asistente/bin/guardar-comprobante *)",
+      "Bash(bin/guardar-comprobante *)",
+      "Bash(date *)",
+      "Read(~/.claude/channels/telegram/inbox/**)",
+      "mcp__plugin_telegram_telegram__*"
+    ],
+    "deny": [
+      "WebFetch",
+      "WebSearch",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(rm *)",
+      "Bash(sqlite3 *)",
+      "Read(~/.claude/channels/telegram/.env)",
+      "Read(~/.ssh/**)"
+    ]
+  }
+}

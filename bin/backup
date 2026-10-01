@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Backup en caliente de la base (seguro con WAL). Guarda 60 días.
+set -euo pipefail
+BASE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+mkdir -p "$BASE/backups"
+sqlite3 "$BASE/data/asistente.db" ".backup '$BASE/backups/asistente-$(date +%Y%m%d-%H%M).db'"
+find "$BASE/backups" -name 'asistente-*.db' -mtime +60 -delete

@@ -1,0 +1,19 @@
+[Unit]
+Description=Asistente personal (Claude Code + Telegram Channels)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+User=asistente
+WorkingDirectory=/home/asistente/asistente
+Environment=HOME=/home/asistente
+Environment=PATH=/home/asistente/.local/bin:/home/asistente/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TZ=America/Argentina/Buenos_Aires
+ExecStart=/usr/bin/tmux new-session -d -s asistente -x 220 -y 50 "claude --channels plugin:telegram@claude-plugins-official"
+ExecStop=/usr/bin/tmux kill-session -t asistente
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

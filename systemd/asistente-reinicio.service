@@ -1,0 +1,7 @@
+[Unit]
+Description=Backup de la base y reinicio diario de la sesion (contexto limpio)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/runuser -u asistente -- /home/asistente/asistente/bin/backup
+ExecStart=/usr/bin/systemctl restart asistente.service

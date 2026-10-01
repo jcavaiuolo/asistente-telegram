@@ -1,0 +1,12 @@
+[Unit]
+Description=Sugerencia diaria de cena por Telegram
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=asistente
+WorkingDirectory=/home/asistente/asistente
+Environment=HOME=/home/asistente
+Environment=PATH=/home/asistente/.local/bin:/home/asistente/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TZ=America/Argentina/Buenos_Aires
+ExecStart=/home/asistente/asistente/bin/cena
