@@ -28,11 +28,32 @@
   .cat:hover { background: var(--pico-muted-border-color); }
   .cat.activa { outline: 2px solid var(--pico-primary); }
   .barra { height: .6rem; border-radius: 3px; background: var(--pico-primary); min-width: 2px; }
-  article.dia { padding: .5rem 1rem; margin: 0 0 1rem; }
-  article.dia > header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .25rem 1rem;
-                         margin: -.5rem -1rem .5rem; padding: .6rem 1rem; }
-  article.dia table { margin: 0; }
-  .tabla-scroll { overflow-x: auto; }
+  /* Gráfico de egresos por día */
+  #grafico-wrap { position: relative; margin-bottom: 1.25rem; }
+  .grafico-cab { display: flex; justify-content: space-between; align-items: center; gap: .5rem; min-height: 2rem; }
+  #grafico svg { display: block; width: 100%; }
+  .g-grid { stroke: var(--pico-muted-border-color); stroke-width: 1; }
+  .g-base { stroke: var(--pico-muted-color); stroke-width: 1; }
+  .g-txt { fill: var(--pico-muted-color); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .g-bar { fill: var(--pico-primary); }
+  .g-bar.atenuada { opacity: .3; }
+  .g-prom { stroke: var(--pico-muted-color); stroke-width: 1; stroke-dasharray: 4 3; }
+  .g-hit { fill: transparent; cursor: pointer; }
+  .g-hit:hover { fill: var(--pico-muted-border-color); fill-opacity: .35; }
+  .tooltip { position: absolute; pointer-events: none; z-index: 5; padding: .4rem .6rem; border-radius: 6px; font-size: .85em;
+             background: var(--pico-card-background-color); border: 1px solid var(--pico-muted-border-color);
+             box-shadow: 0 2px 8px rgb(0 0 0 / .25); white-space: nowrap; }
+  #dia-sel { margin: 0 0 .5rem; }
+  .leyenda-prom { display: inline-block; width: 1.2em; vertical-align: middle; border-top: 1px dashed var(--pico-muted-color); }
+  .cats h4 { font-size: .85em; margin: .6rem 0 .2rem; color: var(--pico-muted-color); font-weight: 400; }
+
+  /* Lista de movimientos: una sola tabla, cabecera fija, una fila separadora por día */
+  table.lista-dias { margin: 0; }
+  table.lista-dias thead th { position: sticky; top: 0; z-index: 2; background: var(--pico-background-color); }
+  tr.dia-cab td { background: var(--pico-card-sectioning-background-color); padding-top: .75rem;
+                  border-bottom: 2px solid var(--pico-muted-border-color); }
+  tr.dia-cab div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .25rem 1rem; }
+  @media (max-width: 768px) { .tabla-scroll { overflow-x: auto; } }
   tr.fila { cursor: pointer; }
   tr.anulado td { text-decoration: line-through; opacity: .55; }
   tr.ingreso td.num { color: #2e7d32; }
@@ -80,6 +101,7 @@
     <label>Desde <input type="date" id="desde"></label>
     <label>Hasta <input type="date" id="hasta"></label>
     <label>Categoría <select id="f-cat"><option value="">Todas</option></select></label>
+    <label class="sin-legal"><input type="checkbox" role="switch" id="f-sin-legal"> Excluir "legal"</label>
     <fieldset>
       <label><input type="checkbox" name="tipo" value="gasto" checked> Gastos</label>
       <label><input type="checkbox" name="tipo" value="transferencia_enviada" checked> Transf. enviadas</label>
@@ -90,7 +112,16 @@
   </div>
 
   <div id="tarjetas" class="tarjetas"></div>
+  <div id="grafico-wrap" hidden>
+    <div class="grafico-cab">
+      <small class="muted" id="graf-titulo"></small>
+      <div id="graf-moneda" class="presets"></div>
+    </div>
+    <div id="grafico"></div>
+    <div id="tooltip" class="tooltip" hidden></div>
+  </div>
   <div id="cats" class="cats"></div>
+  <p id="dia-sel" hidden></p>
   <div id="dias"></div>
 </section>
 
@@ -208,6 +239,9 @@ function marcarPreset(p) {
   $$('[data-preset]').forEach((b) => b.classList.toggle('secondary', b.dataset.preset !== p));
 }
 
+let diaSel = null;      // día elegido en el gráfico (AAAA-MM-DD) o null = todos
+let monGraf = 'ARS';    // moneda del gráfico: ARS y USD nunca comparten eje
+
 async function cargarGastos() {
   const desde = $('#desde').value, hasta = $('#hasta').value;
   if (!desde || !hasta) return;
@@ -215,19 +249,24 @@ async function cargarGastos() {
   const tipos = $$('[name=tipo]:checked').map((c) => c.value);
   const q = new URLSearchParams({ desde, hasta, tipos: tipos.join(','), anulados: $('#f-anulados').checked ? '1' : '0' });
   try { movs = await api('/api/movimientos?' + q); } catch (e) { toast(e.message, true); return; }
-  const cats = [...new Set(movs.map((m) => m.categoria || 'sin_categoria'))].sort();
-  const sel = $('#f-cat'), actual = sel.value;
-  sel.innerHTML = '<option value="">Todas</option>' + cats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  sel.value = cats.includes(actual) ? actual : '';
+  if (diaSel && (diaSel < desde || diaSel > hasta)) diaSel = null;
   renderGastos();
 }
 
 function sumar(obj, mon, v) { obj[mon] = (obj[mon] || 0) + v; }
 const montos = (obj) => Object.keys(obj).sort().map((mon) => money(obj[mon], mon)).join(' · ');
+const catDe = (m) => m.categoria || 'sin_categoria';
+const esEgreso = (m) => !m.anulado && EGRESOS.includes(m.tipo);
 
 function renderGastos() {
-  const cat = $('#f-cat').value;
-  const lista = movs.filter((m) => !cat || (m.categoria || 'sin_categoria') === cat);
+  // "Excluir legal" saca esa categoría de todo: totales, gráfico, categorías y lista.
+  const base = movs.filter((m) => !($('#f-sin-legal').checked && catDe(m) === 'legal'));
+  const cats = [...new Set(base.map(catDe))].sort();
+  const sel = $('#f-cat'), actual = sel.value;
+  sel.innerHTML = '<option value="">Todas</option>' + cats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.value = cats.includes(actual) ? actual : '';
+  const cat = sel.value;
+  const lista = base.filter((m) => !cat || catDe(m) === cat);
   const vigentes = lista.filter((m) => !m.anulado);
   const dias = Math.round((new Date($('#hasta').value) - new Date($('#desde').value)) / 86400000) + 1;
 
@@ -244,23 +283,27 @@ function renderGastos() {
     <small class="muted">${lista.length - vigentes.length ? `+ ${lista.length - vigentes.length} anulados` : '&nbsp;'}</small></article>`;
   $('#tarjetas').innerHTML = tarjetas;
 
+  renderGrafico(lista);
+
   // Por categoría (egresos, separado por moneda: nunca se suman ARS y USD)
   const porCat = {};
-  for (const m of movs.filter((m) => !m.anulado && EGRESOS.includes(m.tipo))) {
-    const k = m.moneda + '|' + (m.categoria || 'sin_categoria');
+  for (const m of base.filter(esEgreso)) {
+    const k = m.moneda + '|' + catDe(m);
     porCat[k] = (porCat[k] || 0) + m.monto;
   }
   const filasCat = Object.entries(porCat).map(([k, v]) => ({ mon: k.split('|')[0], cat: k.split('|')[1], v }));
   const max = {};
   for (const f of filasCat) max[f.mon] = Math.max(max[f.mon] || 0, f.v);
+  const monCat = [...new Set(filasCat.map((f) => f.mon))].sort();
   $('#cats').innerHTML = filasCat.length
     ? '<small class="muted">Egresos por categoría (clic para filtrar)</small>' +
-      filasCat.sort((a, b) => a.mon.localeCompare(b.mon) || b.v - a.v).map((f) => `
+      monCat.map((mon) => (monCat.length > 1 ? `<h4>${mon === 'USD' ? 'En dólares' : 'En pesos'}</h4>` : '') +
+        filasCat.filter((f) => f.mon === mon).sort((a, b) => b.v - a.v).map((f) => `
         <div class="cat ${f.cat === cat ? 'activa' : ''}" data-cat="${esc(f.cat)}">
-          <span>${esc(f.cat)}${f.mon === 'USD' ? ' (USD)' : ''}</span>
+          <span>${esc(f.cat)}</span>
           <div><div class="barra" style="width:${(100 * f.v / max[f.mon]).toFixed(1)}%"></div></div>
           <span class="num">${money(f.v, f.mon)}</span>
-        </div>`).join('')
+        </div>`).join('')).join('')
     : '';
 
   // Días: el acumulado se calcula de la fecha más vieja a la más nueva, se muestra de la más nueva a la más vieja.
@@ -270,14 +313,24 @@ function renderGastos() {
   const acum = {}, info = {};
   for (const f of fechas) {
     const dia = {};
-    for (const m of porDia.get(f)) if (!m.anulado && EGRESOS.includes(m.tipo)) sumar(dia, m.moneda, m.monto);
+    for (const m of porDia.get(f)) if (esEgreso(m)) sumar(dia, m.moneda, m.monto);
     for (const [mon, v] of Object.entries(dia)) sumar(acum, mon, v);
     info[f] = { dia, acum: { ...acum } };
   }
 
-  $('#dias').innerHTML = fechas.length ? fechas.reverse().map((f) => {
+  $('#dia-sel').hidden = !diaSel;
+  if (diaSel) $('#dia-sel').innerHTML = `Mostrando solo el <strong>${nombreDia(diaSel)}</strong> · <a href="#" id="ver-todos">ver todos los días</a>`;
+  const visibles = (diaSel ? fechas.filter((f) => f === diaSel) : fechas).reverse();
+
+  if (!visibles.length) {
+    $('#dias').innerHTML = `<p class="muted">${diaSel ? 'No hay movimientos ese día.' : 'No hay movimientos en este período.'}</p>`;
+    return;
+  }
+  const cuerpo = visibles.map((f) => {
     const { dia, acum } = info[f];
-    const filas = porDia.get(f).map((m) => {
+    const cab = `<tr class="dia-cab"><td colspan="6"><div><strong>${nombreDia(f)}</strong>
+      <span>Día: <strong>${Object.keys(dia).length ? montos(dia) : '$ 0'}</strong> &nbsp;·&nbsp; Acumulado: <strong>${montos(acum) || '$ 0'}</strong></span></div></td></tr>`;
+    return cab + porDia.get(f).map((m) => {
       const egreso = EGRESOS.includes(m.tipo);
       return `
       <tr class="fila ${m.anulado ? 'anulado' : ''} ${egreso ? '' : 'ingreso'}" data-id="${m.id}" title="Clic para ver el detalle">
@@ -294,20 +347,134 @@ function renderGastos() {
         ${m.mensaje_original ? `<br>Mensaje original: "${esc(m.mensaje_original)}"` : ''}
       </td></tr>`;
     }).join('');
-    return `<article class="dia">
-      <header><strong>${nombreDia(f)}</strong>
-        <span>Día: <strong>${Object.keys(dia).length ? montos(dia) : '$ 0'}</strong> &nbsp;·&nbsp; Acumulado: <strong>${montos(acum) || '$ 0'}</strong></span></header>
-      <div class="tabla-scroll"><table class="striped">
-        <thead><tr><th>#</th><th>Categoría</th><th>Dónde / quién</th><th>Medio</th><th>Detalle</th><th class="num">Monto</th></tr></thead>
-        <tbody>${filas}</tbody></table></div></article>`;
-  }).join('') : '<p class="muted">No hay movimientos en este período.</p>';
+  }).join('');
+  $('#dias').innerHTML = `<div class="tabla-scroll"><table class="lista-dias">
+    <thead><tr><th>#</th><th>Categoría</th><th>Dónde / quién</th><th>Medio</th><th>Detalle</th><th class="num">Monto</th></tr></thead>
+    <tbody>${cuerpo}</tbody></table></div>`;
 }
+
+/* ---------- Gráfico: barras verticales, un día por barra, una sola moneda ---------- */
+
+function pasoLindo(bruto) {
+  const pot = 10 ** Math.floor(Math.log10(bruto));
+  const f = bruto / pot;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pot;
+}
+function corto(n, mon) {
+  const pre = mon === 'USD' ? 'US$ ' : '$ ';
+  if (n >= 1e6) return pre + (n / 1e6).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' M';
+  if (n >= 1e3) return pre + (n / 1e3).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' k';
+  return pre + n.toLocaleString('es-AR', { maximumFractionDigits: 0 });
+}
+
+let grafDias = [], grafTot = {}, grafCant = {};
+
+function renderGrafico(lista) {
+  const cont = $('#grafico'), wrap = $('#grafico-wrap');
+  const egr = lista.filter(esEgreso);
+  const monedas = [...new Set(egr.map((m) => m.moneda))].sort();
+  if (!egr.length) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  if (!monedas.includes(monGraf)) monGraf = monedas[0];
+  $('#graf-moneda').innerHTML = monedas.length > 1
+    ? monedas.map((mon) => `<button class="outline ${mon === monGraf ? '' : 'secondary'}" data-mon="${mon}">${mon}</button>`).join('')
+    : '';
+
+  grafDias = [];
+  const hasta = $('#hasta').value;
+  for (let d = new Date($('#desde').value + 'T12:00:00'); iso(d) <= hasta; d.setDate(d.getDate() + 1)) grafDias.push(iso(d));
+  grafTot = {}; grafCant = {};
+  for (const m of egr) if (m.moneda === monGraf) { grafTot[m.fecha] = (grafTot[m.fecha] || 0) + m.monto; grafCant[m.fecha] = (grafCant[m.fecha] || 0) + 1; }
+
+  const W = Math.max(cont.clientWidth, 280), H = 200, ml = 58, mr = 6, mt = 12, mb = 22;
+  const iw = W - ml - mr, ih = H - mt - mb;
+  const max = Math.max(...grafDias.map((d) => grafTot[d] || 0));
+  const paso = pasoLindo(max / 4);
+  const tope = Math.ceil(max / paso) * paso;
+  const yDe = (v) => mt + ih - (v / tope) * ih;
+  const col = iw / grafDias.length;
+  const bw = Math.max(1, Math.min(28, col - 2));          // 2px de aire entre barras
+  let svg = '';
+
+  for (let v = 0; v <= tope + 1e-9; v += paso) {
+    const y = yDe(v).toFixed(1);
+    svg += `<line class="${v === 0 ? 'g-base' : 'g-grid'}" x1="${ml}" x2="${W - mr}" y1="${y}" y2="${y}"/>`;
+    svg += `<text class="g-txt" x="${ml - 6}" y="${y}" dy="4" text-anchor="end">${corto(v, monGraf)}</text>`;
+  }
+
+  const cadaN = Math.max(1, Math.ceil(grafDias.length / Math.max(1, Math.floor(iw / 46))));
+  grafDias.forEach((d, i) => {
+    const v = grafTot[d] || 0;
+    const x = ml + i * col + (col - bw) / 2;
+    if (v > 0) {
+      const y = yDe(v), h = mt + ih - y, r = Math.min(4, bw / 2, h);
+      const clase = diaSel && diaSel !== d ? 'g-bar atenuada' : 'g-bar';
+      svg += `<path class="${clase}" d="M${x},${mt + ih} V${y + r} Q${x},${y} ${x + r},${y} H${x + bw - r} Q${x + bw},${y} ${x + bw},${y + r} V${mt + ih} Z"/>`;
+    }
+    if (i % cadaN === 0) {
+      const [, mm, dd] = d.split('-');
+      svg += `<text class="g-txt" x="${ml + i * col + col / 2}" y="${H - 6}" text-anchor="middle">${+dd}/${+mm}</text>`;
+    }
+  });
+
+  // Promedio diario del período (línea punteada)
+  const total = grafDias.reduce((s, d) => s + (grafTot[d] || 0), 0);
+  const prom = total / grafDias.length;
+  if (prom > 0) {
+    const y = yDe(prom).toFixed(1);
+    svg += `<line class="g-prom" x1="${ml}" x2="${W - mr}" y1="${y}" y2="${y}"/>`;
+  }
+  $('#graf-titulo').innerHTML = `Egresos por día en ${monGraf} · <span class="leyenda-prom"></span> promedio ${money(prom, monGraf)} por día · clic en una barra para ver ese día`;
+
+  // Zonas de clic/hover: toda la columna del día, más grande que la barra
+  grafDias.forEach((d, i) => {
+    svg += `<rect class="g-hit" data-dia="${d}" x="${ml + i * col}" y="${mt}" width="${col}" height="${ih}"/>`;
+  });
+
+  cont.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Egresos por día en ${monGraf}">${svg}</svg>`;
+}
+
+$('#grafico').addEventListener('mousemove', (e) => {
+  const r = e.target.closest('.g-hit');
+  const tt = $('#tooltip');
+  if (!r) { tt.hidden = true; return; }
+  const d = r.dataset.dia, v = grafTot[d] || 0, n = grafCant[d] || 0;
+  tt.innerHTML = `<strong>${nombreDia(d)}</strong><br>${money(v, monGraf)}<span class="muted"> · ${n} ${n === 1 ? 'movimiento' : 'movimientos'}</span>`;
+  tt.hidden = false;
+  const caja = $('#grafico-wrap').getBoundingClientRect();
+  let x = e.clientX - caja.left + 12;
+  if (x + tt.offsetWidth > caja.width) x = e.clientX - caja.left - tt.offsetWidth - 12;
+  tt.style.left = x + 'px';
+  tt.style.top = (e.clientY - caja.top - tt.offsetHeight - 8) + 'px';
+});
+$('#grafico').addEventListener('mouseleave', () => ($('#tooltip').hidden = true));
+$('#grafico').addEventListener('click', (e) => {
+  const r = e.target.closest('.g-hit');
+  if (!r) return;
+  diaSel = diaSel === r.dataset.dia ? null : r.dataset.dia;
+  renderGastos();
+  if (diaSel) $('#dia-sel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('#graf-moneda').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mon]');
+  if (b) { monGraf = b.dataset.mon; renderGastos(); }
+});
+$('#dia-sel').addEventListener('click', (e) => {
+  if (e.target.id !== 'ver-todos') return;
+  e.preventDefault();
+  diaSel = null;
+  renderGastos();
+});
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (!$('#tab-gastos').hidden) renderGastos(); }, 150); });
 
 $$('[data-preset]').forEach((b) => b.addEventListener('click', () => preset(b.dataset.preset)));
 ['#desde', '#hasta'].forEach((s) => $(s).addEventListener('change', () => { marcarPreset(null); guardarPref('preset', ''); cargarGastos(); }));
 $$('[name=tipo]').forEach((c) => c.addEventListener('change', cargarGastos));
 $('#f-anulados').addEventListener('change', cargarGastos);
 $('#f-cat').addEventListener('change', renderGastos);
+$('#f-sin-legal').checked = leerPref('sinLegal') === '1';
+$('#f-sin-legal').addEventListener('change', (e) => { guardarPref('sinLegal', e.target.checked ? '1' : '0'); renderGastos(); });
 $('#cats').addEventListener('click', (e) => {
   const c = e.target.closest('.cat');
   if (!c) return;
