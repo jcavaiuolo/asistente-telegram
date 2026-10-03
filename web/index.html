@@ -101,7 +101,7 @@
     <label>Desde <input type="date" id="desde"></label>
     <label>Hasta <input type="date" id="hasta"></label>
     <label>Categoría <select id="f-cat"><option value="">Todas</option></select></label>
-    <label class="sin-legal"><input type="checkbox" role="switch" id="f-sin-legal"> Excluir "legal"</label>
+    <span id="excluibles" class="fila-controles" style="margin:0"></span>
     <fieldset>
       <label><input type="checkbox" name="tipo" value="gasto" checked> Gastos</label>
       <label><input type="checkbox" name="tipo" value="transferencia_enviada" checked> Transf. enviadas</label>
@@ -259,8 +259,9 @@ const catDe = (m) => m.categoria || 'sin_categoria';
 const esEgreso = (m) => !m.anulado && EGRESOS.includes(m.tipo);
 
 function renderGastos() {
-  // "Excluir legal" saca esa categoría de todo: totales, gráfico, categorías y lista.
-  const base = movs.filter((m) => !($('#f-sin-legal').checked && catDe(m) === 'legal'));
+  // Las categorías excluidas (switches de arriba) salen de todo: totales, gráfico, categorías y lista.
+  const excluidas = new Set($$('[data-excluir]:checked').map((c) => c.dataset.excluir));
+  const base = movs.filter((m) => !excluidas.has(catDe(m)));
   const cats = [...new Set(base.map(catDe))].sort();
   const sel = $('#f-cat'), actual = sel.value;
   sel.innerHTML = '<option value="">Todas</option>' + cats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -473,8 +474,19 @@ $$('[data-preset]').forEach((b) => b.addEventListener('click', () => preset(b.da
 $$('[name=tipo]').forEach((c) => c.addEventListener('change', cargarGastos));
 $('#f-anulados').addEventListener('change', cargarGastos);
 $('#f-cat').addEventListener('change', renderGastos);
-$('#f-sin-legal').checked = leerPref('sinLegal') === '1';
-$('#f-sin-legal').addEventListener('change', (e) => { guardarPref('sinLegal', e.target.checked ? '1' : '0'); renderGastos(); });
+// Categorías grandes u ocasionales que conviene poder sacar de la vista. Cada switch se recuerda aparte.
+const EXCLUIBLES = ['legal', 'hijo'];
+$('#excluibles').innerHTML = EXCLUIBLES.map((c) =>
+  `<label><input type="checkbox" role="switch" data-excluir="${c}" ${leerPref('excluir:' + c) === '1' ? 'checked' : ''}> Excluir "${c}"</label>`).join('');
+$('#excluibles').addEventListener('change', (e) => {
+  const c = e.target.dataset.excluir;
+  if (!c) return;
+  guardarPref('excluir:' + c, e.target.checked ? '1' : '0');
+  renderGastos();
+});
+// Preferencia de la versión anterior (un solo switch para legal): se migra una vez y se borra.
+if (leerPref('sinLegal') === '1') { $('[data-excluir="legal"]').checked = true; guardarPref('excluir:legal', '1'); }
+guardarPref('sinLegal', '');
 $('#cats').addEventListener('click', (e) => {
   const c = e.target.closest('.cat');
   if (!c) return;
