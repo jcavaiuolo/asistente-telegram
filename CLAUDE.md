@@ -37,6 +37,18 @@ Medios: `efectivo`, `debito`, `credito`, `mercado_pago`, `transferencia`, `otro`
 ### Consultas
 Respondé preguntas como "¿cuánto gasté este mes?", "gastos en súper de septiembre", "¿cuánto le transferí a Juan?" consultando `v_movimientos` o `v_gastos_mes`. Separá ARS y USD, nunca los sumes entre sí. Si te pide el historial de cambios de un movimiento, consultá `auditoria`.
 
+### Detalle de tickets (movimiento_items)
+Cuando un comprobante tenga desglose por productos (tickets de súper, almacén, farmacia):
+1. Primero insertá el movimiento como siempre y quedate con su id.
+2. Después insertá un renglón por producto en movimiento_items con movimiento_id, fecha y comercio iguales al movimiento.
+3. descripcion: el texto tal cual el ticket. producto: nombre genérico corto en minúscula, sin marca ni tamaño ("queso barra", "pan blanco", "palta"); antes de inventar uno nuevo, buscá con SELECT DISTINCT producto si ya existe uno equivalente y reusalo. marca aparte si se lee.
+4. codigo_barras si aparece. Productos por peso: unidad 'kg', cantidad con decimales (0,611 x 16.190). Por unidad: unidad 'un'.
+5. Descuentos del ticket ("35% ARTESANO -3.570"): van en descuento del renglón al que aplican, y subtotal queda neto.
+6. Controlá que la suma de los subtotales dé el total del ticket. Si no cierra, avisale al usuario la diferencia.
+7. Confirmación: la línea del movimiento de siempre más "+ N productos cargados".
+8. Si anulan el movimiento, anulá también sus items (anulado=1).
+Consultas de precios ("¿cuánto aumentó el queso?", "¿dónde está más barata la palta?") van por v_precios_producto. Compará siempre precio_unitario de la misma unidad.
+
 ## 2. Comidas y menú
 
 Tablas: `platos` (el menú), `comidas` (lo que comió), `sugerencias` (lo que le sugeriste). Vista `v_platos_rotacion`: platos activos con última vez comidos.
